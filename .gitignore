@@ -84,3 +84,9 @@ frontend/.env.production.local
 # OS
 Thumbs.db
 
+<<<<<<< HEAD
+=======
+# #Datasets
+# dataset/
+
+>>>>>>> 9a6108c25d54356bc677ab0c6fd0d1f8cc80594c

@@ -4,3 +4,12 @@
 # Core dependencies
 # (Add more as needed for later chapters)
 
+<<<<<<< HEAD
+=======
+Flask
+gunicorn==21.2.0
+scikit-learn==1.3.2
+joblib==1.3.2
+numpy==1.26.2
+pytest==7.4.2
+>>>>>>> 9a6108c25d54356bc677ab0c6fd0d1f8cc80594c
