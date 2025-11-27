@@ -87,3 +87,9 @@ Thumbs.db
 # #Datasets
 # dataset/
 
+LLM-venv/
+venv/
+.env/
+*.pyc
+__pycache__/
+

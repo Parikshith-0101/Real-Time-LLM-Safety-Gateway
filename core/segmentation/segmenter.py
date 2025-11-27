@@ -193,8 +193,10 @@ class Segmenter:
             if any(i in processed_indices for i in range(start_idx, end_idx)):
                 continue
             
-            quote_text = match.group(0).rstrip('\n')
-            
+            # Strip trailing newlines from segment content, but keep full span for processing
+            quote_text_full = match.group(0)
+            quote_text = quote_text_full.rstrip('\n')
+
             # Check for email indicators / URLs
             has_email = bool(self.EMAIL_PATTERN.search(quote_text))
             has_urls = bool(self.URL_PATTERN.search(quote_text))
@@ -204,18 +206,18 @@ class Segmenter:
                 segment_id=f"quote_{self._next_id()}",
                 origin=OriginType.QUOTED,
                 start_index=start_idx,
-                end_index=start_idx + len(quote_text),
-                length=len(quote_text),
+                end_index=end_idx,
+                length=len(quote_text),  # Use length of stripped text
                 has_quotes=True,
                 has_urls=has_urls,
                 has_emails=has_email,
                 entropy_score=entropy,
                 confidence=0.85,
             )
-            
+
             segments.append(Segment(text=quote_text, metadata=metadata))
-            # Mark as processed
-            for i in range(start_idx, start_idx + len(quote_text)):
+            # Mark as processed using the true match span
+            for i in range(start_idx, end_idx):
                 processed_indices.add(i)
         
         # Then match single-line quote patterns (email headers, etc.)
@@ -392,9 +394,15 @@ class Segmenter:
             if any(idx in processed_indices for idx in range(start_idx, end_idx)):
                 continue
             
-            sentence_text = prompt[start_idx:end_idx].strip()
-            if not sentence_text:
+            raw_span = prompt[start_idx:end_idx]
+            stripped = raw_span.strip()
+            if not stripped:
                 continue
+            leading_trim = len(raw_span) - len(raw_span.lstrip())
+            trailing_trim = len(raw_span) - len(raw_span.rstrip())
+            adj_start = start_idx + leading_trim
+            adj_end = end_idx - trailing_trim if trailing_trim else end_idx
+            sentence_text = prompt[adj_start:adj_end]
             
             # Check for URLs, emails, entropy (per segment)
             has_urls = bool(self.URL_PATTERN.search(sentence_text))
@@ -404,9 +412,9 @@ class Segmenter:
             metadata = SegmentMetadata(
                 segment_id=f"user_{self._next_id()}",
                 origin=OriginType.USER,
-                start_index=start_idx,
-                end_index=end_idx,
-                length=len(sentence_text),
+                start_index=adj_start,
+                end_index=adj_end,
+                length=adj_end - adj_start,
                 has_urls=has_urls,
                 has_emails=has_emails,
                 entropy_score=entropy,
