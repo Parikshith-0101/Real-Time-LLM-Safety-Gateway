@@ -1,0 +1,6 @@
+# LLM Safety Gateway - Dependencies
+# Chapter 1: Segmentation Module
+
+# Core dependencies
+# (Add more as needed for later chapters)
+

@@ -1,0 +1,140 @@
+/* src/components/AnimatedBackground.css */
+
+.animated-background-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  overflow: hidden;
+
+  /* Adjusted Base Background Color */
+  /* More mixed blue/purple/dark pink with a subtle glow in the center */
+  background: radial-gradient(circle at center,
+              rgba(25, 20, 45, 1) 0%, /* Dark Blue-Purple */
+              rgba(15, 10, 30, 1) 30%,
+              rgba(10, 5, 20, 1) 70%,
+              rgba(5, 2, 10, 1) 100%);
+  background-size: 200% 200%; /* Allows for a subtle background animation */
+  animation: backgroundPan 30s linear infinite alternate; /* Pan the background gradient */
+}
+
+/* New Keyframe for background panning */
+@keyframes backgroundPan {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* Renamed and enhanced keyframe for element movement and blink */
+@keyframes neuronPulse {
+  0% {
+    transform: translate(-100vw, 0vh) scale(0.5) rotate(0deg);
+    opacity: 0;
+  }
+  25% {
+    transform: translate(-25vw, 20vh) scale(1.0) rotate(45deg);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate(0vw, -10vh) scale(0.8) rotate(90deg);
+    opacity: 0.7;
+  }
+  75% {
+    transform: translate(25vw, 30vh) scale(1.1) rotate(135deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(100vw, -0vh) scale(0.6) rotate(180deg);
+    opacity: 0;
+  }
+}
+
+/* Base style for each animated layer (now 'neuron-particle') */
+.neuron-particle {
+  position: absolute;
+  /* Slightly smaller default size for a more 'particle' feel */
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  filter: blur(60px); /* Slightly less blur for more distinct shapes */
+  animation: neuronPulse ease-in-out infinite; /* Apply the new complex animation */
+  
+  /* Initial state to ensure they start off-screen/small */
+  transform: translate(-100vw, 0vh) scale(0.5) rotate(0deg);
+
+  /* Default gradient for glowing blue/pink mix */
+  background: radial-gradient(circle,
+              rgba(135, 206, 250, 0.6) 0%, /* Light Sky Blue */
+              rgba(147, 112, 219, 0.6) 30%, /* Medium Purple */
+              rgba(255, 105, 180, 0.6) 60%, /* Hot Pink */
+              transparent 100%
+            );
+}
+
+/* Individual particle settings for varied appearance and timing */
+/* We'll make them start at different 'phases' of the animation */
+/* Layer 1 - Blue dominant */
+.layer-1 {
+  top: 10%; left: 0%;
+  width: 120px; height: 120px;
+  animation-duration: 25s;
+  animation-delay: 0s; /* Start immediately */
+  background: radial-gradient(circle, rgba(135, 206, 250, 0.7) 0%, rgba(147, 112, 219, 0.7) 50%, transparent 100%);
+}
+/* Layer 2 - Pink dominant */
+.layer-2 {
+  top: 40%; left: -20%;
+  width: 180px; height: 180px;
+  animation-duration: 30s;
+  animation-delay: -5s; /* Start 5 seconds into the animation cycle */
+  background: radial-gradient(circle, rgba(255, 105, 180, 0.7) 0%, rgba(147, 112, 219, 0.7) 50%, transparent 100%);
+}
+/* Layer 3 - Purple dominant */
+.layer-3 {
+  top: 70%; left: -40%;
+  width: 100px; height: 100px;
+  animation-duration: 20s;
+  animation-delay: -10s;
+  background: radial-gradient(circle, rgba(147, 112, 219, 0.7) 0%, rgba(135, 206, 250, 0.7) 50%, transparent 100%);
+}
+/* Layer 4 - Mixed */
+.layer-4 {
+  top: 20%; left: -60%;
+  width: 160px; height: 160px;
+  animation-duration: 28s;
+  animation-delay: -15s;
+  background: radial-gradient(circle, rgba(135, 206, 250, 0.7) 0%, rgba(255, 105, 180, 0.7) 50%, transparent 100%);
+}
+/* Layer 5 - Pink dominant */
+.layer-5 {
+  top: 55%; left: -80%;
+  width: 140px; height: 140px;
+  animation-duration: 22s;
+  animation-delay: -2s;
+  background: radial-gradient(circle, rgba(255, 105, 180, 0.7) 0%, rgba(147, 112, 219, 0.7) 50%, transparent 100%);
+}
+/* Layer 6 - Blue dominant */
+.layer-6 {
+  top: 85%; left: -100%;
+  width: 90px; height: 90px;
+  animation-duration: 26s;
+  animation-delay: -7s;
+  background: radial-gradient(circle, rgba(135, 206, 250, 0.7) 0%, rgba(147, 112, 219, 0.7) 50%, transparent 100%);
+}
+/* Layer 7 - Purple dominant */
+.layer-7 {
+  top: 5%; left: -120%;
+  width: 170px; height: 170px;
+  animation-duration: 32s;
+  animation-delay: -12s;
+  background: radial-gradient(circle, rgba(147, 112, 219, 0.7) 0%, rgba(255, 105, 180, 0.7) 50%, transparent 100%);
+}
+/* Layer 8 - Mixed */
+.layer-8 {
+  top: 30%; left: -140%;
+  width: 110px; height: 110px;
+  animation-duration: 24s;
+  animation-delay: -18s;
+  background: radial-gradient(circle, rgba(255, 105, 180, 0.7) 0%, rgba(135, 206, 250, 0.7) 50%, transparent 100%);
+}
