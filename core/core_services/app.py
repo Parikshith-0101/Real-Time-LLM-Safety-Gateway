@@ -1,9 +1,11 @@
-# core_service/app.py
+# core/core_services/app.py
 import importlib
 import unicodedata
 import re
 import os
 import logging
+import sys
+from pathlib import Path
 from typing import Any, Dict, List
 
 from flask import Flask, request, jsonify
@@ -12,10 +14,35 @@ from flask import Flask, request, jsonify
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("core_service")
 
-# Optionally adjust PYTHONPATH here if `core` is not importable by default.
-# Uncomment and adjust if needed:
-# import sys
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Ensure project root (parent of 'core' folder) is on sys.path so `import core.*` works.
+# This tries to find a sibling 'core' directory upward from this file.
+HERE = Path(__file__).resolve().parent  # core/core_services
+# If this file is at project-root/core/core_services/, then project root is HERE.parent.parent
+# We'll search upwards up to 4 levels to locate the directory that contains 'core' as a sibling.
+found_root = None
+p = HERE
+for _ in range(4):
+    possible = p.parent  # directory above current
+    if (possible / "core").exists():
+        found_root = possible
+        break
+    p = possible
+
+if found_root:
+    sys.path.insert(0, str(found_root))
+    logger.info(f"Added project root to PYTHONPATH: {found_root}")
+else:
+    # Last-resort: add HERE.parent (which is the folder containing this file's 'core' sibling)
+    # This helps when running from repo root or when core is in the same folder level.
+    alt = HERE.parent
+    if (alt / "normalization").exists() or (alt / "segmentation").exists():
+        sys.path.insert(0, str(alt))
+        logger.info(f"Added {alt} to PYTHONPATH as fallback")
+    else:
+        logger.warning(
+            "Could not automatically find project root containing 'core'. "
+            "If imports fail, set PYTHONPATH or run from repo root."
+        )
 
 def try_import(module_path: str):
     try:
@@ -25,6 +52,7 @@ def try_import(module_path: str):
         return None
 
 # Try to import normalization & segmentation modules.
+# Note: with the sys.path fix above these imports should resolve to your core package.
 norm_mod = try_import("core.normalization.normalizer") or try_import("core.normalization") or try_import("core.norm")
 seg_mod = try_import("core.segmentation.segmenter") or try_import("core.segmentation") or try_import("core.segment")
 
@@ -182,5 +210,6 @@ def process():
     return jsonify(resp), 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    # default port 5000 (matches docker-compose convention)
+    port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port, debug=False)

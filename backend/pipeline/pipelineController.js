@@ -1,4 +1,4 @@
-import * as coreClient from './coreClient.js';
+import { callCore } from './coreClient.js'; 
 import * as mlClient from './mlClient.js';
 import { validateSanitize } from './validators.js';
 import { estimateTokens } from './tokenEstimator.js';
@@ -24,7 +24,7 @@ export async function handleSanitizeRequest(payload, opts = {}) {
   const tokenCount = estimateTokens(prompt);
 
   // call core python service
-  const coreResp = await coreClient.process(prompt, { correlationId });
+const coreResp = await callCore(prompt, { correlationId });
   logger.info('pipeline:core_done', { correlationId });
 
   // call ml python service
