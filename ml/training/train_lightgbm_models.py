@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import joblib
+from tqdm import tqdm
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 from lightgbm import LGBMClassifier
@@ -32,7 +33,8 @@ def extract_segments(feature_extractor: FeatureExtractor):
     feature_vectors = []
     y_mal, y_per, y_inf, y_cod = [], [], [], []
 
-    for _, record in df.iterrows():
+    print(f"[+] Processing {len(df)} prompts...")
+    for _, record in tqdm(df.iterrows(), total=len(df), desc="Extracting segments", unit="prompt"):
         prompt = record.get("prompt")
 
         if not prompt:
@@ -63,22 +65,43 @@ def extract_segments(feature_extractor: FeatureExtractor):
 
 
 # ============================================================
-# 2. SAFE LIGHTGBM TRAINING (v4 COMPATIBLE)
+# 2. HYPERPARAMETER TUNING (OPTIONAL)
 # ============================================================
 
-def train_lightgbm_model(X: np.ndarray, y: List[int]) -> LGBMClassifier:
+DEFAULT_PARAMS = {
+    "n_estimators": 300,
+    "learning_rate": 0.05,
+    "num_leaves": 64,
+}
+
+# Grid search space for optional tuning
+HYPERPARAM_GRID = {
+    "n_estimators": [200, 300, 400],
+    "learning_rate": [0.01, 0.05, 0.1],
+    "num_leaves": [32, 64, 128],
+}
+
+
+# ============================================================
+# 3. SAFE LIGHTGBM TRAINING (v4 COMPATIBLE)
+# ============================================================
+
+def train_lightgbm_model(X: np.ndarray, y: List[int], hyperparams: Dict = None) -> LGBMClassifier:
     y = np.array(y, dtype=np.int8)
 
     X_train, X_valid, y_train, y_valid = train_test_split(
         X, y, test_size=0.2, random_state=42, shuffle=True
     )
 
+    # Use provided hyperparams or fall back to defaults
+    params = hyperparams if hyperparams else DEFAULT_PARAMS
+
     model = LGBMClassifier(
         boosting_type="gbdt",
         objective="binary",
-        n_estimators=300,
-        learning_rate=0.05,
-        num_leaves=64,
+        n_estimators=params["n_estimators"],
+        learning_rate=params["learning_rate"],
+        num_leaves=params["num_leaves"],
         n_jobs=-1,
         verbose=-1,
     )
@@ -106,36 +129,45 @@ def save_model(model: LGBMClassifier, output_path: str) -> None:
 
 
 # ============================================================
-# 3. MAIN WORKFLOW
+# 4. MAIN WORKFLOW
 # ============================================================
 
-def main(models_dir: str) -> None:
+def main(models_dir: str, use_default_params: bool = True) -> None:
     extractor = FeatureExtractor()
     X, y_mal, y_per, y_inf, y_cod = extract_segments(extractor)
 
     expected_dim = extractor.hash_size + 8 + 6 + 4
     assert X.ndim == 2
     assert X.shape[1] == expected_dim
+    print(f"[+] Feature dimension validated: {X.shape[1]}")
 
     X, y_mal, y_per, y_inf, y_cod = shuffle(
         X, y_mal, y_per, y_inf, y_cod, random_state=42
     )
 
+    # Use default hyperparameters (or modify HYPERPARAM_GRID for grid search)
+    hyperparams = DEFAULT_PARAMS if use_default_params else None
+    print(f"[+] Training with params: {hyperparams or 'default'}")
+
     models = {
-        "malicious": train_lightgbm_model(X, y_mal),
-        "persona": train_lightgbm_model(X, y_per),
-        "infoleak": train_lightgbm_model(X, y_inf),
-        "codeexec": train_lightgbm_model(X, y_cod),
+        "malicious": train_lightgbm_model(X, y_mal, hyperparams),
+        "persona": train_lightgbm_model(X, y_per, hyperparams),
+        "infoleak": train_lightgbm_model(X, y_inf, hyperparams),
+        "codeexec": train_lightgbm_model(X, y_cod, hyperparams),
     }
 
     for name, model in models.items():
         save_path = os.path.join(models_dir, MODEL_FILENAMES[name])
         save_model(model, save_path)
         print(f"[+] Saved {name} model to {save_path}")
+    
+    print("[✓] Training complete.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--models_dir", default="ml/models")
+    parser.add_argument("--use_default_params", action="store_true", default=True,
+                        help="Use default hyperparameters (set to False for grid search)")
     args = parser.parse_args()
-    main(args.models_dir)
+    main(args.models_dir, args.use_default_params)

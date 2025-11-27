@@ -16,7 +16,7 @@ class FeatureExtractor:
     SEGMENT_TYPE_ORDER: Sequence[OriginType] = (
         OriginType.USER,
         OriginType.QUOTED,
-        OriginType.CODE_BLOCK,
+        OriginType.CODEBLOCK,
         OriginType.EXTERNAL_PASTE,
     )
 
@@ -184,7 +184,7 @@ class FeatureExtractor:
         hashed = self.build_char_ngrams(text)
         stats = self.compute_stats(text)
         flags = self.compute_boolean_flags(text)
-        type_one_hot = self._segment_type_vector(segment.origin_type)
+        type_one_hot = self._segment_type_vector(segment.metadata.origin)
 
         return np.concatenate([hashed, stats, flags, type_one_hot], dtype=np.float32)
 
