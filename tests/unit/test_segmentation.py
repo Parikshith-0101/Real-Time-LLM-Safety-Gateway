@@ -26,7 +26,11 @@ class TestSegmenter(unittest.TestCase):
         """
         segments = self.segmenter.segment(prompt)
         
+<<<<<<< HEAD
+        code_segments = [s for s in segments if s.metadata.origin == OriginType.CODEBLOCK]
+=======
         code_segments = [s for s in segments if s.metadata.origin == OriginType.CODE_BLOCK]
+>>>>>>> 9a6108c25d54356bc677ab0c6fd0d1f8cc80594c
         self.assertGreater(len(code_segments), 0)
         self.assertTrue(code_segments[0].metadata.is_code)
     
@@ -79,7 +83,11 @@ class TestSegmenter(unittest.TestCase):
         segments = self.segmenter.segment(prompt)
         
         # Should have code blocks
+<<<<<<< HEAD
+        code_segments = [s for s in segments if s.metadata.origin == OriginType.CODEBLOCK]
+=======
         code_segments = [s for s in segments if s.metadata.origin == OriginType.CODE_BLOCK]
+>>>>>>> 9a6108c25d54356bc677ab0c6fd0d1f8cc80594c
         self.assertGreater(len(code_segments), 0)
         
         # Should have user segments
@@ -108,11 +116,18 @@ class TestSegmenter(unittest.TestCase):
         if segments:
             segment = segments[0]
             weight = SegmentScoringFramework.calculate_segment_weight(segment)
+<<<<<<< HEAD
+            self.assertGreater(weight, 0)
+            
+            priority = SegmentScoringFramework.get_scoring_priority(segment)
+            self.assertGreaterEqual(priority, 0)
+=======
             # Chapter 1: scoring is a stub but must return a deterministic float
             self.assertIsInstance(weight, float)
             
             priority = SegmentScoringFramework.get_scoring_priority(segment)
             self.assertIsInstance(priority, int)
+>>>>>>> 9a6108c25d54356bc677ab0c6fd0d1f8cc80594c
 
 
 if __name__ == '__main__':

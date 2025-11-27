@@ -84,10 +84,11 @@ frontend/.env.production.local
 # OS
 Thumbs.db
 
+
 # #Datasets
 # dataset/
 
-LLM-venv/
+
 venv/
 .env/
 *.pyc
