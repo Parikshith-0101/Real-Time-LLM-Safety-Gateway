@@ -16,12 +16,36 @@ from .metadata import SegmentMetadata, OriginType
 
 @dataclass
 class Segment:
-    """Represents a single segment of text"""
+    """Represents a single segment of text.
+
+    Public interface exposes:
+    - id
+    - text
+    - start_index / end_index
+    - origin_type
+    """
+
     text: str
     metadata: SegmentMetadata
-    
-    def __str__(self):
-        return f"Segment({self.metadata.origin.value}, len={len(self.text)})"
+
+    @property
+    def id(self) -> str:
+        return self.metadata.segment_id
+
+    @property
+    def start_index(self) -> int:
+        return self.metadata.start_index
+
+    @property
+    def end_index(self) -> int:
+        return self.metadata.end_index
+
+    @property
+    def origin_type(self) -> OriginType:
+        return self.metadata.origin
+
+    def __str__(self) -> str:
+        return f"Segment({self.origin_type.value}, len={len(self.text)})"
 
 
 class Segmenter:
@@ -36,11 +60,8 @@ class Segmenter:
     5. Tag each segment with its origin
     """
     
-    # Code block patterns
-    CODE_FENCE_PATTERN = re.compile(
-        r'```[\s\S]*?```|`[^`]+`|~~~[\s\S]*?~~~',
-        re.MULTILINE
-    )
+    # Code block patterns (Chapter 1: triple-backtick fences only)
+    CODE_FENCE_PATTERN = re.compile(r"```[\s\S]*?```", re.MULTILINE)
     
     # Quoted content patterns (allows optional leading whitespace)
     QUOTE_PATTERN = re.compile(
@@ -137,15 +158,22 @@ class Segmenter:
                 if lang_match:
                     language = lang_match.group(1)
             
+            entropy = self._compute_entropy(code_text)
+            has_urls = bool(self.URL_PATTERN.search(code_text))
+            has_emails = bool(self.EMAIL_PATTERN.search(code_text))
+
             metadata = SegmentMetadata(
                 segment_id=f"code_{self._next_id()}",
-                origin=OriginType.CODEBLOCK,
+                origin=OriginType.CODE_BLOCK,
                 start_index=start_idx,
                 end_index=end_idx,
                 length=len(code_text),
                 is_code=True,
                 language=language,
-                confidence=0.95
+                has_urls=has_urls,
+                has_emails=has_emails,
+                entropy_score=entropy,
+                confidence=0.95,
             )
             
             segments.append(Segment(text=code_text, metadata=metadata))
@@ -167,9 +195,11 @@ class Segmenter:
             
             quote_text = match.group(0).rstrip('\n')
             
-            # Check for email indicators
+            # Check for email indicators / URLs
             has_email = bool(self.EMAIL_PATTERN.search(quote_text))
-            
+            has_urls = bool(self.URL_PATTERN.search(quote_text))
+            entropy = self._compute_entropy(quote_text)
+
             metadata = SegmentMetadata(
                 segment_id=f"quote_{self._next_id()}",
                 origin=OriginType.QUOTED,
@@ -177,8 +207,10 @@ class Segmenter:
                 end_index=start_idx + len(quote_text),
                 length=len(quote_text),
                 has_quotes=True,
+                has_urls=has_urls,
                 has_emails=has_email,
-                confidence=0.85
+                entropy_score=entropy,
+                confidence=0.85,
             )
             
             segments.append(Segment(text=quote_text, metadata=metadata))
@@ -197,9 +229,11 @@ class Segmenter:
             
             quote_text = match.group(0)
             
-            # Check for email indicators
+            # Check for email indicators / URLs
             has_email = bool(self.EMAIL_PATTERN.search(quote_text))
-            
+            has_urls = bool(self.URL_PATTERN.search(quote_text))
+            entropy = self._compute_entropy(quote_text)
+
             metadata = SegmentMetadata(
                 segment_id=f"quote_{self._next_id()}",
                 origin=OriginType.QUOTED,
@@ -207,8 +241,10 @@ class Segmenter:
                 end_index=end_idx,
                 length=len(quote_text),
                 has_quotes=True,
+                has_urls=has_urls,
                 has_emails=has_email,
-                confidence=0.85
+                entropy_score=entropy,
+                confidence=0.85,
             )
             
             segments.append(Segment(text=quote_text, metadata=metadata))
@@ -241,13 +277,20 @@ class Segmenter:
                     # Finalize current paste segment
                     paste_text = prompt[current_paste_start:current_paste_end]
                     if len(paste_text.strip()) > 50:  # Minimum length threshold
+                        entropy = self._compute_entropy(paste_text)
+                        has_urls = bool(self.URL_PATTERN.search(paste_text))
+                        has_emails = bool(self.EMAIL_PATTERN.search(paste_text))
+
                         metadata = SegmentMetadata(
                             segment_id=f"pasted_{self._next_id()}",
-                            origin=OriginType.PASTED,
+                            origin=OriginType.EXTERNAL_PASTE,
                             start_index=current_paste_start,
                             end_index=current_paste_end,
                             length=len(paste_text),
-                            confidence=0.70
+                            has_urls=has_urls,
+                            has_emails=has_emails,
+                            entropy_score=entropy,
+                            confidence=0.70,
                         )
                         segments.append(Segment(text=paste_text, metadata=metadata))
                     current_paste_start = None
@@ -269,13 +312,20 @@ class Segmenter:
                     # Finalize current paste segment
                     paste_text = prompt[current_paste_start:current_paste_end]
                     if len(paste_text.strip()) > 50:
+                        entropy = self._compute_entropy(paste_text)
+                        has_urls = bool(self.URL_PATTERN.search(paste_text))
+                        has_emails = bool(self.EMAIL_PATTERN.search(paste_text))
+
                         metadata = SegmentMetadata(
                             segment_id=f"pasted_{self._next_id()}",
-                            origin=OriginType.PASTED,
+                            origin=OriginType.EXTERNAL_PASTE,
                             start_index=current_paste_start,
                             end_index=current_paste_end,
                             length=len(paste_text),
-                            confidence=0.70
+                            has_urls=has_urls,
+                            has_emails=has_emails,
+                            entropy_score=entropy,
+                            confidence=0.70,
                         )
                         segments.append(Segment(text=paste_text, metadata=metadata))
                     current_paste_start = None
@@ -284,13 +334,20 @@ class Segmenter:
         if current_paste_start is not None:
             paste_text = prompt[current_paste_start:current_paste_end]
             if len(paste_text.strip()) > 50:
+                entropy = self._compute_entropy(paste_text)
+                has_urls = bool(self.URL_PATTERN.search(paste_text))
+                has_emails = bool(self.EMAIL_PATTERN.search(paste_text))
+
                 metadata = SegmentMetadata(
                     segment_id=f"pasted_{self._next_id()}",
-                    origin=OriginType.PASTED,
+                    origin=OriginType.EXTERNAL_PASTE,
                     start_index=current_paste_start,
                     end_index=current_paste_end,
                     length=len(paste_text),
-                    confidence=0.70
+                    has_urls=has_urls,
+                    has_emails=has_emails,
+                    entropy_score=entropy,
+                    confidence=0.70,
                 )
                 segments.append(Segment(text=paste_text, metadata=metadata))
         
@@ -339,10 +396,11 @@ class Segmenter:
             if not sentence_text:
                 continue
             
-            # Check for URLs and emails
+            # Check for URLs, emails, entropy (per segment)
             has_urls = bool(self.URL_PATTERN.search(sentence_text))
             has_emails = bool(self.EMAIL_PATTERN.search(sentence_text))
-            
+            entropy = self._compute_entropy(sentence_text)
+
             metadata = SegmentMetadata(
                 segment_id=f"user_{self._next_id()}",
                 origin=OriginType.USER,
@@ -351,7 +409,8 @@ class Segmenter:
                 length=len(sentence_text),
                 has_urls=has_urls,
                 has_emails=has_emails,
-                confidence=0.90
+                entropy_score=entropy,
+                confidence=0.90,
             )
             
             segments.append(Segment(text=sentence_text, metadata=metadata))
@@ -364,8 +423,26 @@ class Segmenter:
         for i, char in enumerate(prompt):
             if i not in processed_indices:
                 unprocessed_chars.append(char)
-        return ''.join(unprocessed_chars)
-    
+        return "".join(unprocessed_chars)
+
+    def _compute_entropy(self, text: str) -> float:
+        """Compute Shannon entropy for a text segment."""
+        if not text:
+            return 0.0
+
+        char_counts = {}
+        for char in text:
+            char_counts[char] = char_counts.get(char, 0) + 1
+
+        entropy = 0.0
+        text_len = len(text)
+        for count in char_counts.values():
+            probability = count / text_len
+            if probability > 0:
+                entropy -= probability * math.log2(probability)
+
+        return entropy
+
     def _has_high_entropy(self, text: str, threshold: float = 3.5) -> bool:
         """
         Simple entropy check to detect high-entropy content.
@@ -373,20 +450,8 @@ class Segmenter:
         """
         if len(text) < 10:
             return False
-        
-        # Calculate character frequency
-        char_counts = {}
-        for char in text:
-            char_counts[char] = char_counts.get(char, 0) + 1
-        
-        # Calculate Shannon entropy
-        entropy = 0.0
-        text_len = len(text)
-        for count in char_counts.values():
-            probability = count / text_len
-            if probability > 0:
-                entropy -= probability * math.log2(probability)
-        
+
+        entropy = self._compute_entropy(text)
         return entropy > threshold
     
     def _next_id(self) -> int:
