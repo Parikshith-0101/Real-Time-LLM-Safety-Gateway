@@ -1,3 +1,3 @@
 import pandas as pd
-df = pd.read_csv("dataset/malicious_llm_prompts_train.csv")
+df = pd.read_csv("ml/datasets/llm_prompts_dataset.csv")
 print(df["attack_type"].value_counts())
