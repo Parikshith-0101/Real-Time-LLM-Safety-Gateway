@@ -44,13 +44,13 @@ LLM-venv/
 .env.local
 
 # ML Models
-*.pkl
+# *.pkl
 *.h5
 *.ckpt
 *.pt
 *.pth
 ml/models/*.joblib
-ml/models/*.pkl
+# ml/models/*.pkl
 
 # Logs
 *.log
