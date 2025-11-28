@@ -1,6 +1,9 @@
-Flask==2.3.4
-gunicorn==21.2.0
-scikit-learn==1.3.2
-joblib==1.3.2
-numpy==1.26.2
-pytest==7.4.2
+Flask>=2.0
+flask-cors>=3.0
+# Add your model dependencies here:
+numpy
+pandas
+scikit-learn
+lightgbm
+# any other libs your feature extractor or model need:
+# e.g. joblib, sentence-transformers, transformers, torch, etc.
