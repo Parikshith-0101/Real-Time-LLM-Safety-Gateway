@@ -4,21 +4,14 @@
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: -1;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
   overflow: hidden;
 
-  /* Adjusted Base Background Color */
-  /* More mixed blue/purple/dark pink with a subtle glow in the center */
-  background: radial-gradient(circle at center,
-              rgba(25, 20, 45, 1) 0%, /* Dark Blue-Purple */
-              rgba(15, 10, 30, 1) 30%,
-              rgba(10, 5, 20, 1) 70%,
-              rgba(5, 2, 10, 1) 100%);
-  background-size: 200% 200%; /* Allows for a subtle background animation */
-  animation: backgroundPan 30s linear infinite alternate; /* Pan the background gradient */
+  background: black !important; /* PURE BLACK */
 }
+
 
 /* New Keyframe for background panning */
 @keyframes backgroundPan {
@@ -138,3 +131,52 @@
   animation-delay: -18s;
   background: radial-gradient(circle, rgba(255, 105, 180, 0.7) 0%, rgba(135, 206, 250, 0.7) 50%, transparent 100%);
 }
+
+/* Marquee Animation */
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  animation: marquee 12s linear infinite;
+}
+
+/* Glow Shadow Animation */
+@keyframes glowShadow {
+  0% { box-shadow: 0 0 10px #00ffee33; }
+  50% { box-shadow: 0 0 30px #00ffeeaa; }
+  100% { box-shadow: 0 0 10px #00ffee33; }
+}
+
+.animate-glowShadow {
+  animation: glowShadow 3s ease-in-out infinite;
+}
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  animation: marquee 12s linear infinite;
+}
+
+@keyframes glowShadow {
+  0% { box-shadow: 0 0 10px #00ffee33; }
+  50% { box-shadow: 0 0 30px #00ffeeaa; }
+  100% { box-shadow: 0 0 10px #00ffee33; }
+}
+
+.animate-glowShadow {
+  animation: glowShadow 3s ease-in-out infinite;
+}
+#network-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2; /* behind neon particles */
+  pointer-events: none; /* avoid blocking clicks */
+}
+
