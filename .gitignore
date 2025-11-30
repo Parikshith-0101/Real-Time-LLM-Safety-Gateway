@@ -39,8 +39,8 @@ ENV/
 .ipynb_checkpoints
 
 # Environment variables
-.env
-.env.local
+# .env
+# .env.local
 
 # ML Models
 # *.pkl
@@ -90,7 +90,10 @@ Thumbs.db
 
 
 venv/
-.env/
+# .env/
 *.pyc
 __pycache__/
 
+
+
+ml/agentic/teste.ipynb

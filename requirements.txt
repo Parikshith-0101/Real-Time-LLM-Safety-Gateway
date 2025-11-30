@@ -14,3 +14,9 @@ lightgbm
 pandas
 datasets
 tqdm
+langgraph
+langchain-core
+langchain-groq
+pydantic
+pydantic-settings
+graphviz

@@ -108,9 +108,10 @@ class SafetyGateway:
                     agg[k] = v
         return agg
 
-    def predict_scores_for_prompt(self, prompt: str) -> Tuple[Dict[str, float], List[Dict[str, float]]]:
+    def predict_scores_for_prompt(self, prompt: str) -> Tuple[Dict[str, float], List[Dict[str, float]], List[str]]:
         """
-        Returns aggregated (per-prompt) scores AND per-segment score dicts.
+        Returns aggregated (per-prompt) scores, per-segment score dicts, and the
+        list of segment text strings.
         """
         segments = self._segment_texts(prompt)
         seg_scores = [self._predict_segment_scores(seg) for seg in segments]
