@@ -1,72 +1,75 @@
 # ml/app/model_loader.py
-# Loads the model and vectorizer from disk and exposes a predict function.
 import os
-import joblib
-import numpy as np
-from typing import List, Tuple, Dict
+import sys
+import logging
+from pathlib import Path
+from typing import Optional
 
-THIS_DIR = os.path.dirname(__file__)
-MODEL_DIR = os.path.join(THIS_DIR, '..', 'models')
+logger = logging.getLogger("ml_model_loader")
+logger.setLevel(logging.INFO)
 
-MODEL_PATH = os.path.join(MODEL_DIR, 'model.pkl')
-VECT_PATH = os.path.join(MODEL_DIR, 'vectorizer.pkl')
+_SG = None  # module-level singleton for SafetyGateway
 
-# lazy-loaded artifacts
-_model = None
-_vectorizer = None
+class ModelNotLoadedError(RuntimeError):
+    pass
 
-def load_artifacts():
+def _ensure_import_path():
     """
-    Loads artifacts into module-level variables.
-    Returns True if both model and vectorizer are present.
+    Ensure parent repo root is on sys.path so imports like ml.inference.safety_gateway and core.* work.
+    This function searches upward from this file to find the repo root (which should contain 'core' and 'ml').
     """
-    global _model, _vectorizer
-    if _model is None:
-        if os.path.exists(MODEL_PATH):
-            _model = joblib.load(MODEL_PATH)
-    if _vectorizer is None:
-        if os.path.exists(VECT_PATH):
-            _vectorizer = joblib.load(VECT_PATH)
-    return _model is not None and _vectorizer is not None
+    here = Path(__file__).resolve().parent  # ml/app
+    p = here
+    for _ in range(5):
+        if (p / "core").exists() or (p / "ml").exists():
+            root = p
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+                logger.info("Added project root to sys.path: %s", root)
+            return
+        p = p.parent
+    # fallback: add parent of this folder
+    fallback = here.parent
+    if str(fallback) not in sys.path:
+        sys.path.insert(0, str(fallback))
+        logger.info("Added fallback path to sys.path: %s", fallback)
 
-def predict_proba_and_labels(prompt: str, segments: List[dict] = None) -> Tuple[float, Dict]:
+def init_safety_gateway(models_dir: Optional[str] = None, log_path: Optional[str] = None):
     """
-    Return (score, labels) where score is [0.0,1.0] indicating risk/jailbreak probability.
-    If artifacts are missing, fall back to heuristic prediction.
+    Initialize the SafetyGateway singleton. Safe to call multiple times.
     """
-    ready = load_artifacts()
-    text = prompt or ""
-    labels = {}
+    global _SG
+    if _SG is not None:
+        return _SG
 
-    if ready:
-        # Combine prompt and segments for context if segments provided
-        if segments:
-            seg_text = " ".join([s.get('text', '') for s in segments])
-            text_input = text + " " + seg_text
-        else:
-            text_input = text
+    _ensure_import_path()
 
-        X = _vectorizer.transform([text_input])
-        # Prefer predict_proba; fallback to decision_function -> sigmoid
-        try:
-            probs = _model.predict_proba(X)
-            score = float(probs[0][1])
-        except Exception:
-            try:
-                df = _model.decision_function(X)
-                score = float(1 / (1 + np.exp(-df[0])))
-            except Exception:
-                score = 0.5
+    try:
+        # local import after path fix
+        from ml.inference.safety_gateway import SafetyGateway
+    except Exception as e:
+        logger.exception("Failed to import SafetyGateway: %s", e)
+        raise
 
-        labels['jailbreak'] = bool(score >= 0.7)
-        labels['sensitive'] = bool('password' in text.lower() or 'api_key' in text.lower())
+    models_dir = models_dir or os.environ.get("MODELS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models")))
+    log_path = log_path or os.environ.get("SG_LOG_PATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "logs", "safety_gateway.log")))
 
-        return score, labels
+    # instantiate SafetyGateway
+    try:
+        sg = SafetyGateway(models_dir=models_dir, log_path=log_path)
+    except Exception as e:
+        logger.exception("Failed to instantiate SafetyGateway: %s", e)
+        raise
 
-    # fallback heuristics if no artifacts
-    txt = text.lower()
-    if "ignore previous instructions" in txt or "reveal system prompt" in txt or "bypass" in txt:
-        return 0.95, {"jailbreak": True}
-    if "password" in txt or "api_key" in txt or "api-key" in txt:
-        return 0.9, {"sensitive": True}
-    return 0.3, {"jailbreak": False}
+    _SG = sg
+    logger.info("SafetyGateway initialized with models_dir=%s", models_dir)
+    return _SG
+
+def get_safety_gateway():
+    """
+    Return the already-initialized SafetyGateway instance, or raise ModelNotLoadedError.
+    """
+    global _SG
+    if _SG is None:
+        raise ModelNotLoadedError("SafetyGateway not initialized. Call init_safety_gateway() first.")
+    return _SG
