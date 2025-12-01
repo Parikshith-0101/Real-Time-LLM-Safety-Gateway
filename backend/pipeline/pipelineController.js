@@ -6,8 +6,12 @@ import { estimateTokens } from "./tokenEstimator.js";
 import logger from "../utils/logger.js";
 
 /**
- * Simple pipeline: call core -> call ml -> return combined result to caller.
- * No deterministic rules or sanitizer applied here.
+ * Simple pipeline: call core -> call ml agent -> return combined result to caller.
+ * The ML client returns an agent object:
+ *   { verdict: "allow" | "sanitize", sanitized_prompt: string, explanation: string, confidence: number }
+ *
+ * This controller returns both the pipeline-friendly shape and the agent-style top-level fields
+ * so frontend code that expects agent JSON will work.
  */
 export async function handleSanitizeRequest(payload, opts = {}) {
   const { correlationId } = opts || {};
@@ -32,9 +36,8 @@ export async function handleSanitizeRequest(payload, opts = {}) {
   let coreResp;
   try {
     coreResp = await callCore(prompt, { correlationId });
-    logger.info("pipeline:core_done", { correlationId });
+    logger.info("pipeline:core_done", { correlationId, segments: coreResp?.segments?.length ?? 0 });
   } catch (err) {
-    // coreClient should already have a fallback; log & propagate minimum info
     logger.warn("pipeline:core_call_failed", {
       correlationId,
       message: err?.message || String(err),
@@ -46,45 +49,77 @@ export async function handleSanitizeRequest(payload, opts = {}) {
     };
   }
 
-  // 2) ML prediction
+  // 2) ML agent prediction (returns agent JSON)
   let mlResp;
   try {
-    // mlClient.predict should return an object: { simple_scores, meta } or similar
     mlResp = await mlClient.predict(coreResp.cleanedPrompt, coreResp.segments, {
       correlationId,
     });
-    // compute a single mlScore (max across simple_scores) for logging/UI
-    const mlScores = mlResp?.simple_scores || {};
-    const mlScore = Object.values(mlScores).length
-      ? Math.max(...Object.values(mlScores))
-      : mlResp?.meta?.max_score ?? null;
-    logger.info("pipeline:ml_done", { correlationId, mlScore });
+
+    if (!mlResp || typeof mlResp !== "object" || !["allow", "sanitize"].includes(mlResp.verdict)) {
+      logger.warn("pipeline:ml_invalid_response_shape", { correlationId, raw: mlResp });
+      throw new Error("invalid_ml_agent_response");
+    }
+
+    logger.info("pipeline:ml_done", {
+      correlationId,
+      verdict: mlResp.verdict,
+      confidence: typeof mlResp.confidence === "number" ? mlResp.confidence : null,
+    });
   } catch (err) {
     logger.warn("pipeline:ml_call_failed, using fallback", {
       correlationId,
       message: err?.message || String(err),
     });
-    // simple fallback shape — keep consistent with your future ML responses
+
     mlResp = {
-      simple_scores: { malicious: 0, persona: 0, infoleak: 0, codeexec: 0 },
-      meta: { segment_scores: [], scores: {} },
+      verdict: "sanitize",
+      sanitized_prompt:
+        "This prompt has been safely transformed to avoid harmful content.",
+      explanation:
+        "ML service unavailable or returned invalid output. Fallback sanitized prompt used.",
+      confidence: 0.5,
+      mlDown: true,
     };
   }
 
-  // 3) Build a simple response that the frontend/consumer can use immediately
+  // 3) Map agent verdict -> pipeline decision & create top-level agent fields
+  const decision = mlResp.verdict === "allow" ? "allow" : "sanitize";
+  const sanitizedPrompt =
+    mlResp.verdict === "allow"
+      ? String(prompt)
+      : String(mlResp.sanitized_prompt || coreResp.cleanedPrompt || prompt);
+
+  const explanation = mlResp.explanation || mlResp.note || "";
+  const confidence = typeof mlResp.confidence === "number" ? mlResp.confidence : null;
+
+  // 4) Build response for frontend that contains both shapes
   const response = {
-    decision: "defer", // not decided here (agent/engine to decide later). Use 'defer' or 'noop'
-    note: "core + ml responses returned. Decisioning deferred to agent.",
+    // agent-style top-level fields (WHAT YOUR FRONTEND EXPECTS)
+    verdict: decision,
+    sanitized_prompt: sanitizedPrompt,
+    explanation,
+    confidence,
+
+    // pipeline-style fields (existing shape, kept for compatibility)
+    decision,
+    note: explanation,
+    sanitizedPrompt,
+    confidenceScore: confidence,
 
     // Useful payloads for downstream logic / UI
     core: coreResp, // { cleanedPrompt, segments, flags }
-    ml: mlResp, // { simple_scores, meta } (from your ML service)
+    ml: mlResp, // agent object: { verdict, sanitized_prompt, explanation, confidence }
     tokens: tokenCount,
     correlationId,
+    audit: {
+      core: coreResp,
+      ml: mlResp,
+      tokens: tokenCount,
+    },
   };
 
-  // Log the outcome (you can adjust detail level)
-  logger.info("pipeline:finish", { correlationId, tokens: tokenCount });
+  logger.info("pipeline:finish", { correlationId, tokens: tokenCount, decision });
 
   return response;
 }

@@ -20,3 +20,4 @@ langchain-groq
 pydantic
 pydantic-settings
 graphviz
+python-dotenv
