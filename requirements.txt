@@ -21,3 +21,4 @@ pydantic
 pydantic-settings
 graphviz
 python-dotenv
+flask_cors

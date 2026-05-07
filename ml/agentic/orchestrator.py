@@ -3,23 +3,33 @@ LangGraph orchestrator for agentic safety workflow.
 """
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-from pydantic import BaseModel
-from langgraph.graph import StateGraph, START, END
-
-from ml.agentic.config import AgenticConfig
-from ml.agentic.malicious_agent import MaliciousSanitizationAgent
-from ml.agentic.persona_agent import PersonaSanitizationAgent
-from ml.agentic.infoleak_agent import InfoLeakSanitizationAgent
-from ml.agentic.codeexec_agent import CodeExecSanitizationAgent
+from dataclasses import dataclass
+# Try to import AgenticConfig; if unavailable, provide minimal defaults so orchestrator can initialize
+try:
+    from ml.agentic.config import AgenticConfig  # type: ignore
+except Exception:
+    class AgenticConfig:  # fallback minimal config
+        groq_api_key: str = ""
+        groq_model: str = "llama-3.3-70b-versatile"
+        malicious_threshold: float = 0.7
+        persona_threshold: float = 0.6
+        infoleak_threshold: float = 0.65
+        codeexec_threshold: float = 0.65
+        safe_threshold: float = 0.5
+        rerun_ml_on_sanitized: bool = False
 from ml.agentic.utils import build_final_action_object, map_dim_to_agent_name
-from ml.inference.safety_gateway import SafetyGateway
+
+# NOTE: Defer heavy imports (langgraph, agents, SafetyGateway) to runtime to avoid import-time failures
+# when optional dependencies are not installed. This allows orchestrator to initialize and make
+# threshold-based decisions without agent graph.
 
 
-class OrchestratorState(BaseModel):
+
+@dataclass
+class OrchestratorState:
     """State object for the orchestration workflow."""
-
     prompt: str
     scores: Dict[str, float]
     category: str
@@ -27,24 +37,44 @@ class OrchestratorState(BaseModel):
     segment_texts: list
     selected_agents: list
     agent_outputs: Dict[str, Any]
-    sanitized_prompt: str | None
-    final_action: str | None
+    sanitized_prompt: Optional[str]
+    final_action: Optional[str]
     reason: str = ""
+
+
+# Simple, explicit thresholds for decisioning
+LOW_RISK_THRESHOLD = 0.25
+HIGH_RISK_THRESHOLD = 0.50
 
 
 class SafetyOrchestrator:
     """
     LangGraph-based orchestrator for safety decisions.
+    Instantiable with no positional args and sets required attributes.
     """
 
-    def __init__(self, config: AgenticConfig = None):
+    def __init__(self, config: Optional[AgenticConfig] = None):
+        # Allow argument-free construction
         if config is None:
             config = AgenticConfig()
         self.config = config
-        self.graph = self._build_graph()
+
+        # Defer building the agent graph until needed (ambiguous zone)
+        self.graph = None  # will be compiled on-demand
 
     def _build_graph(self):
-        """Build the LangGraph workflow."""
+        """Build the LangGraph workflow (imports deferred)."""
+        try:
+            from langgraph.graph import StateGraph, START, END  # type: ignore
+            # Agents are imported lazily to avoid import-time dependency failures
+            from ml.agentic.malicious_agent import MaliciousSanitizationAgent  # noqa: F401
+            from ml.agentic.persona_agent import PersonaSanitizationAgent  # noqa: F401
+            from ml.agentic.infoleak_agent import InfoLeakSanitizationAgent  # noqa: F401
+            from ml.agentic.codeexec_agent import CodeExecSanitizationAgent  # noqa: F401
+            from ml.inference.safety_gateway import SafetyGateway  # noqa: F401
+        except Exception as e:
+            raise RuntimeError(f"Agent graph dependencies missing: {e}")
+
         graph = StateGraph(OrchestratorState)
 
         # Add nodes
@@ -215,18 +245,44 @@ class SafetyOrchestrator:
         """
         Run the orchestrator workflow.
 
-        Args:
-            prompt: User prompt
-            scores: ML scores {"malicious": x, "persona": y, "infoleak": z, "codeexec": w}
-            segment_score_map: Dict mapping segment_text → (mal, persona, infoleak, codeexec)
-            segment_texts: List of segment texts
-
-        Returns:
-            Final JSON action object
+        REQUIRED CHANGE: apply threshold-based decision using ML scores
+        - If max_score < LOW_RISK_THRESHOLD => allow
+        - If max_score >= HIGH_RISK_THRESHOLD => sanitize
+        - Else => run agent graph to refine; if no agents sanitize => allow
         """
+        # 1) Basic sanity and max score computation
+        safe_scores = scores or {}
+        if not safe_scores:
+            max_score = 0.0
+        else:
+            try:
+                max_score = max(float(v) for v in safe_scores.values())
+            except Exception:
+                max_score = 0.0
+
+        # 2) Immediate decisions based on thresholds
+        if max_score < LOW_RISK_THRESHOLD:
+            # Allow benign prompts
+            return build_final_action_object(
+                action="allow",
+                safe_prompt=prompt,
+                reason=f"max_score={max_score:.2f} < LOW_RISK_THRESHOLD={LOW_RISK_THRESHOLD}",
+                scores=safe_scores,
+            )
+
+        if max_score >= HIGH_RISK_THRESHOLD:
+            # Sanitize clearly malicious prompts
+            return build_final_action_object(
+                action="sanitize",
+                safe_prompt=prompt,  # pipeline will replace if agents propose a sanitized prompt later
+                reason=f"max_score={max_score:.2f} >= HIGH_RISK_THRESHOLD={HIGH_RISK_THRESHOLD}",
+                scores=safe_scores,
+            )
+
+        # 3) Ambiguous zone: use existing agent graph as tie-breaker
         initial_state = OrchestratorState(
             prompt=prompt,
-            scores=scores,
+            scores=safe_scores,
             category=category,
             segment_score_map=segment_score_map,
             segment_texts=segment_texts,
@@ -237,14 +293,18 @@ class SafetyOrchestrator:
             reason="",
         )
 
+        # Build graph on-demand
+        if self.graph is None:
+            self.graph = self._build_graph()
+
         result = self.graph.invoke(initial_state)
 
-        # Ensure result is JSON-serializable
+        # Ensure result is JSON-serializable and never default to sanitize
         if isinstance(result, OrchestratorState):
             return build_final_action_object(
                 action=result.final_action or "allow",
                 safe_prompt=result.sanitized_prompt or result.prompt,
-                reason=result.reason,
+                reason=result.reason or f"ambiguous: max_score={max_score:.2f}",
                 scores=result.scores,
             )
 

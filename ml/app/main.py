@@ -97,27 +97,29 @@ except Exception:
 _ORCH_SINGLETON = None
 def get_orchestrator():
     """
-    Return a SafetyOrchestrator instance, or None if unavailable.
-    Attempts lazy instantiation and logs full traceback on failure.
+    Return the singleton SafetyOrchestrator instance.
+
+    REQUIRED: Fail loudly on initialization errors (do not return fallback/None),
+    and set the singleton exactly once upon successful construction.
     """
     global _ORCH_SINGLETON
     if _ORCH_SINGLETON is not None:
         return _ORCH_SINGLETON
 
     if SafetyOrchestrator is None:
-        logger.warning("SafetyOrchestrator class not available for lazy init.")
-        return None
+        # Fail loudly to surface real import/init bugs
+        raise RuntimeError("SafetyOrchestrator class unavailable (import failed)")
 
     try:
-        _ORCH_SINGLETON = SafetyOrchestrator()
-        logger.info("SafetyOrchestrator lazy-initialized successfully")
+        inst = SafetyOrchestrator()
+        _ORCH_SINGLETON = inst
+        logger.info("SafetyOrchestrator initialized and cached (singleton)")
         return _ORCH_SINGLETON
     except Exception as e:
-        logger.exception("Lazy init of SafetyOrchestrator failed: %s", e)
-        logger.error("Lazy init traceback:\n%s", traceback.format_exc())
-        _ORCH_SINGLETON = None
-        return None
-
+        # Do not mask the error; propagate so callers do not fallback due to init failure
+        logger.exception("SafetyOrchestrator initialization failed: %s", e)
+        logger.error("Orchestrator init traceback:\n%s", traceback.format_exc())
+        raise
 
 # ---- Flask endpoints ----
 @app.get("/health")
@@ -305,16 +307,12 @@ def run_agent():
             segment_texts = []
 
     # 2) Run orchestrator (lazy via get_orchestrator)
-    orch = get_orchestrator()
-    if orch is None:
-        logger.warning("Orchestrator not available; returning conservative sanitize fallback")
-        fallback = {
-            "verdict": "sanitize",
-            "sanitized_prompt": "This prompt has been safely transformed to avoid harmful content.",
-            "explanation": "Orchestrator unavailable; conservative sanitized fallback returned.",
-            "confidence": max(0.0, min(1.0, float(max(simple_scores.values()) if simple_scores else 0.5))),
-        }
-        return jsonify(fallback), 200
+    # Orchestrator must be available; fail loudly if not
+    try:
+        orch = get_orchestrator()
+    except Exception as e:
+        logger.exception("Orchestrator initialization error: %s", e)
+        return jsonify({"error": "orchestrator_init_failed", "message": str(e)}), 500
 
     try:
         orchestrator_result = orch.run(

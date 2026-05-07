@@ -1,7 +1,7 @@
 import os
 from typing import Dict
 
-import joblib
+import logging
 import lightgbm as lgb
 import numpy as np
 
@@ -17,42 +17,65 @@ MODEL_FILENAMES = {
 
 
 class _ModelLoader:
-    """Robust loader that tries .txt booster first, then .pkl full model."""
+    """Strict LightGBM loader that only accepts valid save_model() .txt boosters.
+
+    Requirements:
+    - Log the exact path being loaded
+    - Validate first line to resemble a LightGBM text model (e.g., contains 'tree' or 'Tree=')
+    - Do NOT fallback to pickle or other formats
+    """
 
     def __init__(self, model_path):
-        self._is_booster = False
         self.booster = None
-        self.model = None
+        self.model_path = model_path
+        self.logger = logging.getLogger("lightgbm_loader")
 
-        # try .txt booster
-        if os.path.exists(model_path):
-            try:
-                self.booster = lgb.Booster(model_file=model_path)
-                self._is_booster = True
-                return
-            except Exception:
-                pass
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        # fallback .pkl
-        pkl_path = model_path.replace(".txt", ".pkl")
-        if os.path.exists(pkl_path):
-            self.model = joblib.load(pkl_path)
-            self._is_booster = False
-        else:
-            raise FileNotFoundError(f"Neither {model_path} nor {pkl_path} found.")
+        # Enforce .txt extension
+        if not model_path.lower().endswith('.txt'):
+            raise RuntimeError(
+                f"Invalid model file extension for LightGBM Booster: {model_path}. Expected a .txt saved via Booster.save_model()"
+            )
+
+        # Lightweight validation of model file header (first ~5 lines)
+        try:
+            with open(model_path, "r", encoding="utf-8", errors="ignore") as f:
+                head = [next(f, "").strip() for _ in range(5)]
+        except Exception as e:
+            raise RuntimeError(f"Failed to read model file: {model_path}; error: {e}")
+
+        header_blob = "\n".join([h for h in head if h])
+        tokens = ["tree", "Tree=0", "num_leaves"]
+        if not header_blob or not any(tok.lower() in header_blob.lower() for tok in tokens):
+            raise RuntimeError(
+                "Invalid LightGBM model file: not a saved tree model. "
+                "Expected text model saved via booster.save_model(). "
+                f"Checked first 5 lines for one of {tokens}. Path: {model_path}"
+            )
+
+        # Log and attempt to load strictly via Booster
+        self.logger.info(f"Loading LightGBM Booster from: {model_path}")
+        try:
+            self.booster = lgb.Booster(model_file=model_path)
+        except Exception as e:
+            # Surface clear message to caller without LightGBM internal spam
+            raise RuntimeError(
+                "LightGBM failed to load model file. Ensure it was saved via Booster.save_model('*.txt'). "
+                f"Path: {model_path}; error: {e}"
+            )
 
     def predict_proba(self, X):
         """Return probability predictions (simplified scalar output per sample)."""
-        if self._is_booster:
-            return self.booster.predict(X)
-        else:
-            return self.model.predict_proba(X)[:, 1]
+        return self.booster.predict(X)
 
 
 class LightGBMInference:
-    """Loads LightGBM models (booster or full) and provides segment-level scoring."""
+    """Loads LightGBM models (strict LightGBM .txt boosters) and provides segment-level scoring."""
 
     def __init__(self, models_dir: str = "ml/models", hash_size: int = 20000) -> None:
+        self.models_dir = models_dir
         self.extractor = FeatureExtractor(hash_size=hash_size)
         self.segmenter = Segmenter()
         self.models: Dict[str, _ModelLoader] = {}
